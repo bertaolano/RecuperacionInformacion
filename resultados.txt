@@ -1,0 +1,16 @@
+1	http://zaguan.unizar.es/record/64189
+1	http://zaguan.unizar.es/record/10657
+1	http://zaguan.unizar.es/record/6333
+1	http://zaguan.unizar.es/record/6946
+2	http://zaguan.unizar.es/record/16234
+2	http://zaguan.unizar.es/record/13978
+2	http://zaguan.unizar.es/record/14002
+2	http://zaguan.unizar.es/record/14270
+2	http://zaguan.unizar.es/record/14799
+2	http://zaguan.unizar.es/record/15253
+2	http://zaguan.unizar.es/record/15768
+2	http://zaguan.unizar.es/record/16787
+2	http://zaguan.unizar.es/record/31347
+3	http://zaguan.unizar.es/record/16940
+3	http://zaguan.unizar.es/record/76135
+3	http://zaguan.unizar.es/record/77729
