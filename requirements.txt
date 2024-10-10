@@ -1,0 +1,13 @@
+click==8.1.7
+gensim==4.3.3
+joblib==1.4.2
+nltk==3.9.1
+numpy==1.26.4
+regex==2024.7.24
+scikit-learn==1.5.1
+scipy==1.13.1
+smart-open==7.0.4
+threadpoolctl==3.5.0
+tqdm==4.66.5
+Whoosh==2.7.4
+wrapt==1.16.0
