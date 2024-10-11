@@ -81,7 +81,7 @@ def findCoord(query_text):
         north = match.group(4)
         return west, east, south, north,not_espacial_query
     else:
-        return None
+        return None, None, None, None, query_text
 
 class MySearcher:
     def __init__(self, index_folder, model_type = 'tfidf'):
@@ -96,23 +96,26 @@ class MySearcher:
 
         
     def search(self, query_text, query_count,output_file):
-        #west, east, south, north, not_spacial_query=findCoord(query_text)
-        #if west is not None and east is not None and north is not None and south is not None:
-        #    westRangeQuery = NumericRange ("west", start = None , end = east )
-        #    eastRangeQuery = NumericRange ("east", start = west , end = None )
-        #    northRangeQuery = NumericRange ("north", start = south , end = None )
-        #    southRangeQuery = NumericRange ("west", start = None , end = north )
-        #    spatial_query = And([westRangeQuery,eastRangeQuery,southRangeQuery,northRangeQuery ])
-        #    query=not_spacial_query
+        spatial_query = None
+        west, east, south, north, not_spacial_query=findCoord(query_text)
+        if west is not None and east is not None and north is not None and south is not None:
+            westRangeQuery = NumericRange ("west", start = None , end = east )
+            eastRangeQuery = NumericRange ("east", start = west , end = None )
+            northRangeQuery = NumericRange ("north", start = south , end = None )
+            southRangeQuery = NumericRange ("west", start = None , end = north )
+            spatial_query = And([westRangeQuery,eastRangeQuery,southRangeQuery,northRangeQuery ])
+            #query=not_spacial_query
         #búsqueda sin las coordenadas
         #
        # parsed_query=parser(query)
-        query=parser(query_text)
+        #query=parser(query_text)
         #query= Or([spatial_query,parsed_query])
         #limitamos los resultados de cada búsqueda a 100
-        query = self.parser.parse(query)
+        query = self.parser.parse(not_spacial_query)
+        if spatial_query is not None: 
+            query = Or([query, spatial_query])
         print("Búsqueda de la Query procesada: ",query)
-        results = self.searcher.search(query,limit = 100)
+        results = self.searcher.search(query, limit = 100)
         print('Returned documents:')
         i = 1
         for result in results:
@@ -142,16 +145,15 @@ if __name__ == '__main__':
 
      # Procesar las consultas y guardar los resultados
     try:
-        #with open(queryFile, 'r', encoding='utf-8') as query_file, 
-        with open(resultsFile, 'w', encoding='utf-8') as output_file:
-            tree = ET.parse(queryFile)
-            root = tree.getroot()
-            for child in root.findall('informationNeed'):
-                query_count=child.find('identifier').text
-                query=child.find('text').text
-                print(f"\nEjecutando búsqueda para la query {query_count}: '{query}'")
+        with open(queryFile, 'r', encoding='utf-8') as query_file, open(resultsFile, 'w', encoding='utf-8') as output_file:
+            query_count = 1
+            for query in query_file:
+                query = query.strip()  # Elimina saltos de línea y espacios adicionales
+                if query:
+                    print(f"\nEjecutando búsqueda para la query {query_count}: '{query}'")
                     # Obtener los resultados de la búsqueda
-                results = searcher.search(query,query_count,output_file)
+                    results = searcher.search(query,query_count,output_file)
+                    query_count += 1
     except FileNotFoundError:
         print(f"El archivo {queryFile} no se encontró.")
     except Exception as e:
