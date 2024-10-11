@@ -185,8 +185,8 @@ class MyIndex:
 if __name__ == '__main__':
 
     index_folder = '../whooshindexZaguanGeo'   #valor por defecto de la carpeta de indexación
-    #docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
-    docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
+    docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
+    #docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == '-index':
