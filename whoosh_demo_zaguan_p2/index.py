@@ -38,6 +38,7 @@ def CustomSpanishAnalyzer():
 def create_folder(folder_name):
     if (not os.path.exists(folder_name)):
         os.mkdir(folder_name)
+        
 #encontrar búsquedas en el campo título
 def find_title(root):
     titles = root.findall('dc:title', ns)
