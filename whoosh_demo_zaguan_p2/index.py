@@ -77,7 +77,7 @@ class MyIndex:
                         subject=TEXT(analyzer=CustomSpanishAnalyzer()), description=TEXT(analyzer=CustomSpanishAnalyzer()), 
                         creator=TEXT(analyzer=CustomSpanishAnalyzer()), contributor=TEXT(analyzer=CustomSpanishAnalyzer()),
                         publisher=TEXT(analyzer=CustomSpanishAnalyzer()), 
-                        publishingyear=NUMERIC(numtype=int), identifier=TEXT(stored=True), docType=TEXT)
+                        publishingyear=NUMERIC(numtype=int), identifier=TEXT(stored=True), docType=KEYWORD(lowercase=True), language=KEYWORD)
         create_folder(index_folder)
         index = create_in(index_folder, schema)
         self.writer = index.writer()
@@ -114,11 +114,12 @@ class MyIndex:
         self.writer.add_document(path=filename, date=fecha_formateada, title=find_parameter(root, 'title'),
                                  subject=find_parameter(root, "subject"), description=find_parameter(root, "description"), creator=find_parameter(root, "creator"),
                                  contributor=find_parameter(root, "contributor"), publisher=find_publisher(root),
-                                 publishingyear=find_Publishingyear(root), identifier=find_parameter(root, "identifier"), docType=find_parameter(root, "type"))
+                                 publishingyear=find_Publishingyear(root), identifier=find_parameter(root, "identifier"), docType=find_parameter(root, "type"),
+                                 language=find_parameter(root, "language"))
 
 if __name__ == '__main__':
 
-    index_folder = '../whooshindexZaguanGeo'   #valor por defecto de la carpeta de indexación
+    index_folder = '../whooshindexZaguan'   #valor por defecto de la carpeta de indexación
     #docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
     docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
     i = 1

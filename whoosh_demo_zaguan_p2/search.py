@@ -55,7 +55,7 @@ Other_Words = [
     "dirigidos", "dirigido", "años", "año", "departamentos de", "departamento de", "miembros", "miembro", "familia", 
     "publicados", "publicado", "estudios", "estudio", "trabajos", "trabajo", "realizados", "realizado", "tutorizados",
     "tutorizado", "apellido", "preferentemente", "defecto", "relacionados", "relacionado", "existen", "hay", "han", "alguien",
-    "busco", "necesito", "ejemplo", "ejemplos", "llamado", "desarrollado", "desarrollada"
+    "busco", "necesito", "ejemplo", "ejemplos", "llamado", "desarrollado", "desarrollada", "deben", "interesado"
 ]
 
 Stop_words = [
@@ -69,7 +69,8 @@ Stop_words = [
     "ser", "estar", "tener", "hacer", "ir", "poder",
     "que", "quien", "donde", "como", "qué", "estos", 
     "estas", "son", "es", "si", "entre", "hacia", "hasta", 
-    "para", "por", "según", "sin", "sobre", "tras", "su", "desde"
+    "para", "por", "según", "sin", "sobre", "tras", "su", "desde",
+    "durante", "este", "otro", "otra", "estoy", "quiero"
 ]
 
 
@@ -109,7 +110,7 @@ def mainQuery(query_text, searcher):
     sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
     for sentence in sentences:
         aux = deleteUnnecessaryWords(sentence)
-        print(aux)
+        #print(aux)
         keyWordQueries.append(searcher.KeyWordParser.parse(aux))
         titleAndDescQueries.append(searcher.MainParser.parse(aux))
     return Or(keyWordQueries), Or(titleAndDescQueries)
@@ -123,8 +124,54 @@ def docTypeQuery(query_text):
         for word in dict:
             if word in lowerCaseQuery:
                 typeSearched.append(Term("docType", dict[0]))
-    print(typeSearched)
+    return Or(typeSearched)
+
+
+def languageQuery(query_text):
+    lowerCaseQuery = query_text.lower()
+    langSearched = []
+    for term in Spanish_equivalents:
+        if re.search(r'.*' + term + r'.*', lowerCaseQuery):
+            langSearched.append(Term("language", "es"))
     
+    for term in English_equivalents:
+        if re.search(r'.*' + term + r'.*', lowerCaseQuery):
+            langSearched.append(Term("language", "eng"))
+    return Or(langSearched)
+
+
+def namesQuery(query_text, searcher):
+    query_text = query_text.lower()
+    nlp = spacy.load("es_core_news_sm")
+    doc = nlp(query_text)
+    names = []
+    authorQueries = []
+    contributorQueries = []
+
+    for entity in doc.ents:
+        if entity.label_ == "PER":
+            names.append(entity.text)
+    
+    for name in names:
+        if re.search(r'.*dirigid. por .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*dirigid.s por .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*tutorizad. por .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*turorizad.s por .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*tutor.s .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*tutora .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*tutor .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*director.s .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*director .*' + re.escape(name) + r'.*', query_text) \
+        or re.search(r'.*directora .*' + re.escape(name) + r'.*', query_text):
+            contributorQueries.append(searcher.ContrNameParser.parse(name))
+        elif (not re.search(r'.*sobre' + name + r'.*', query_text)):
+            authorQueries.append(searcher.AuthorNameParser.parse(name))
+    
+    return Or(authorQueries), Or(contributorQueries)
+
+def departmentQuery(query_text):
+    query_text = query_text.lower()
+
 
 
 
@@ -133,9 +180,11 @@ def parseQuery(query_text, searcher):
     # Eliminamos interrogantes y otros signos de puntuación distintos del punto
     #query = cleanQuery(query_text)
     #keyWordQuery, titleAndDescQuery = mainQuery(query, searcher)
-    docQuery = docTypeQuery(query)
-    #languageQuery(query, searcher)
-    
+    #docQuery = docTypeQuery(query)
+    #lanQuery = languageQuery(query)
+    #authorQuery, contributorQuery = namesQuery(query, searcher)
+    departmentQuery(query)
+    #print(keyWordQuery, titleAndDescQuery, docQuery, lanQuery, authorQuery, contributorQuery)
 
 class MySearcher:
     def __init__(self, index_folder, model_type = 'tfidf'):
@@ -148,28 +197,12 @@ class MySearcher:
             self.searcher = ix.searcher()
         self.KeyWordParser = QueryParser("subject", ix.schema, group = OrGroup)
         self.MainParser = MultifieldParser(["description", "title"], ix.schema, group = OrGroup)
-        self.NameParser = MultifieldParser(["creator", "contributor"], ix.schema, group = OrGroup)
+        self.AuthorNameParser = QueryParser("creator", ix.schema, group = OrGroup)
+        self.ContrNameParser = QueryParser("contributor", ix.schema, group = OrGroup)
         self.PubliParser = QueryParser("publisher", ix.schema, group = OrGroup)
-    
-
-        
-    def search(self, query_text, query_count, output_file):
-        query = parseQuery(query_text)
-        """
-        print("Búsqueda de la Query procesada: ", query)
-        results = self.searcher.search(query, limit = 100)
-        print('Returned documents:')
-        i = 1
-        for result in results:
-            identifier = result.get("identifier")
-            print(f'{i} - File path: {result.get("path")}, Similarity score: {result.score}, identifier:{result.get("identifier")}')
-            # Escribir el número de consulta y el identificador en el archivo de resultados
-            output_file.write(f"{query_count}\t{identifier}\n")
-            i += 1
-        """
 
 if __name__ == '__main__':
-    index_folder = '../whooshindexZaguanGeo' #indice por defecto
+    index_folder = '../whooshindexZaguan' #indice por defecto
     i = 1
     infor=False
     while (i < len(sys.argv)):
