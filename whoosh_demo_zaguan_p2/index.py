@@ -38,65 +38,11 @@ def CustomSpanishAnalyzer():
 def create_folder(folder_name):
     if (not os.path.exists(folder_name)):
         os.mkdir(folder_name)
-        
-#encontrar búsquedas en el campo título
-def find_title(root):
-    titles = root.findall('dc:title', ns)
-    text = " ".join([title.text for title in titles if title.text is not None])
-    return text
 
-#encontrar búsquedas en el campo tema
-def find_subject(root):
-    subjects = root.findall('dc:subject', ns)
-    text = " ".join([subject.text for subject in subjects if subject.text is not None])
-    return text
-
-#encontrar búsquedas en el campo descripción
-def find_description(root):
-    descs = root.findall('dc:description', ns)
-    text = " ".join([desc.text for desc in descs if desc.text is not None])
-    return text
-
-#encontrar búsquedas en el campo autor
-def find_creator(root):
-    auths = root.findall('dc:creator', ns)
-    text = " ".join([auth.text for auth in auths if auth.text is not None])
-    return text  
-
-#encontrar búsquedas en el campo director
-def find_contributor(root):
-    conts = root.findall('dc:contributor', ns)
-    text = " ".join([cont.text for cont in conts if cont.text is not None])
-    return text  
-
-def find_Coordinates(root):
-    north = None
-    south = None
-    east = None
-    west = None
-    
-    boundingBox = root.findall('ows:BoundingBox', ns)
-    
-    for bbox in boundingBox:
-        # Extraer UpperCorner (norte y este)
-        upperCoord = bbox.find('ows:UpperCorner', ns)
-        if upperCoord is not None and upperCoord.text is not None:
-            try:
-                east, north = map(float, upperCoord.text.split())
-            except ValueError:
-                east, north = None, None
-        
-        # Extraer LowerCorner (sur y oeste)
-        lowerCoord = bbox.find('ows:LowerCorner', ns)
-        if lowerCoord is not None and lowerCoord.text is not None:
-            try:
-                west, south = map(float, lowerCoord.text.split())
-            except ValueError:
-                west, south = None, None
-    
-    return north, south, west, east
-
-
+def find_parameter(root, parameter):
+    aux = root.findall('dc:'+parameter, ns)
+    matches = " ".join([match.text for match in aux if match.text is not None])
+    return matches
 
 #encontrar búsquedas en el campo departamento
 def find_publisher(root):
@@ -123,27 +69,20 @@ def find_Publishingyear(root):
         except ValueError:
             return None  # Si no es un número válido, devolvemos None
     return None  # Si no se encuentra un año
-
-#encontrar búsquedas en el campo identidicador
-def find_identifier(root):
-    ids = root.findall('dc:identifier', ns)
-    text = " ".join([ident.text for ident in ids if ident.text is not None])
-    return text  
  
 
 class MyIndex:
-    def __init__(self,index_folder):
-        schema = Schema(path=ID(stored=True), content=TEXT(CustomSpanishAnalyzer()), date=STORED,
-                        title=TEXT(analyzer=CustomSpanishAnalyzer()), subject=TEXT(analyzer=CustomSpanishAnalyzer()), 
-                        description=TEXT(analyzer=CustomSpanishAnalyzer()),creator=TEXT(analyzer=CustomSpanishAnalyzer()),
-                        contributor=TEXT(analyzer=CustomSpanishAnalyzer()),
-                        publisher=TEXT(analyzer=CustomSpanishAnalyzer()),publishingyear=NUMERIC(numtype=int),identifier=TEXT(stored=True),
-                        north=NUMERIC(numtype=float),south=NUMERIC(numtype=float),west=NUMERIC(numtype=float),east=NUMERIC(numtype=float))
+    def __init__(self, index_folder):
+        schema = Schema(path=ID(stored=True), date=STORED, title=TEXT(analyzer=CustomSpanishAnalyzer()), 
+                        subject=TEXT(analyzer=CustomSpanishAnalyzer()), description=TEXT(analyzer=CustomSpanishAnalyzer()), 
+                        creator=TEXT(analyzer=CustomSpanishAnalyzer()), contributor=TEXT(analyzer=CustomSpanishAnalyzer()),
+                        publisher=TEXT(analyzer=CustomSpanishAnalyzer()), 
+                        publishingyear=NUMERIC(numtype=int), identifier=TEXT(stored=True), docType=TEXT)
         create_folder(index_folder)
         index = create_in(index_folder, schema)
         self.writer = index.writer()
 
-    def index_docs(self,docs_folder):   #indexa documentos
+    def index_docs(self, docs_folder):   #indexa documentos
         if (os.path.exists(docs_folder)):
             for file in sorted(os.listdir(docs_folder)):
                 # print(file)
@@ -153,15 +92,12 @@ class MyIndex:
                     self.index_txt_doc(docs_folder, file)
         self.writer.commit()
 
-    def index_txt_doc(self, foldername,filename):   #para ficheros .txt
+    def index_txt_doc(self, foldername, filename):   #para ficheros .txt
         file_path = os.path.join(foldername, filename)
         # print(file_path)
-        with open(file_path) as fp:
-            text = ' '.join(line for line in fp if line)
-        # print(text)
         d=os.path.getmtime(file_path)
         fecha_formateada = email.utils.formatdate(d, usegmt=False)
-        self.writer.add_document(path=filename, content=text, date=fecha_formateada)
+        self.writer.add_document(path=filename, date=fecha_formateada)
 
 
     def index_xml_doc(self, foldername, filename):  #para ficheros .xml
@@ -169,25 +105,22 @@ class MyIndex:
         # print(file_path)
         tree = ET.parse(file_path)
         root = tree.getroot()
-        raw_text = "".join(root.itertext())
+        #raw_text = "".join(root.itertext())
         # break into lines and remove leading and trailing space on each
-        text = ' '.join(line.strip() for line in raw_text.splitlines() if line)
+        #text = ' '.join(line.strip() for line in raw_text.splitlines() if line)
         #print(text)
         d=os.path.getmtime(file_path)   #extraemos última fecha de modificación
         fecha_formateada = email.utils.formatdate(d, usegmt=False)  #formateamos la fecha
-        north,south,west,east=find_Coordinates(root)
-        print(f' Norte: {north}, Sur: {south}, este:{east}, oeste:{west}')
-        self.writer.add_document(path=filename, content=text, date=fecha_formateada,title=find_title(root),
-                                 subject=find_subject(root),description=find_description(root),creator=find_creator(root),
-                                 contributor=find_contributor(root), publisher=find_publisher(root),
-                                 publishingyear=find_Publishingyear(root),identifier=find_identifier(root),
-                                 north=north,south=south,east=east,west=west)
+        self.writer.add_document(path=filename, date=fecha_formateada, title=find_parameter(root, 'title'),
+                                 subject=find_parameter(root, "subject"), description=find_parameter(root, "description"), creator=find_parameter(root, "creator"),
+                                 contributor=find_parameter(root, "contributor"), publisher=find_publisher(root),
+                                 publishingyear=find_Publishingyear(root), identifier=find_parameter(root, "identifier"), docType=find_parameter(root, "type"))
 
 if __name__ == '__main__':
 
     index_folder = '../whooshindexZaguanGeo'   #valor por defecto de la carpeta de indexación
-    docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
-    #docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
+    #docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
+    docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == '-index':

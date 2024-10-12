@@ -13,75 +13,129 @@ import sys
 import spacy
 
 
-from whoosh.qparser import QueryParser
-from whoosh.qparser import OrGroup
+from whoosh.qparser import QueryParser, OrGroup, MultifieldParser
 from whoosh import scoring
 import whoosh.index as index
 from whoosh.query import And,Or
-from whoosh.query import NumericRange
+from whoosh.query import NumericRange, Term
 import xml.etree.ElementTree as ET
 
-def parser(query_text):
-    nlp = spacy.load ("es_core_news_sm")
-    doc = nlp ( query_text )
-    # Find named entities , phrases and concepts
-    posFechas=[]
-    parsed_query_parts = []  # Aquí almacenaremos las diferentes partes de la consulta
-    parsed_query=""
-    for entity in doc.ents:
-        #print(entity.text, entity.label_)
-        if entity.label_ == "PER":
-            # Añadir cada término relacionado a un campo en Whoosh
-            parsed_query_parts.append(f"creator:{entity.text}")
-            parsed_query_parts.append(f"contributor:{entity.text}")
-            parsed_query_parts.append(f"publisher:{entity.text}")
-        elif entity.label_ == "LOC":
-            parsed_query_parts.append(f"description:{entity.text}")
-            parsed_query_parts.append(f"title:{entity.text}")
-            parsed_query_parts.append(f"subject:{entity.text}")
-        elif entity.label_ == "ORG":
-            parsed_query_parts.append(f"description:{entity.text}")
-            parsed_query_parts.append(f"publisher:{entity.text}")
+TFG_equivalents = [
+    "taz-tfg", "trabajos fin de grado", "trabajo fin de grado", "trabajos de fin de grado", 
+    "trabajo de fin de grado", "tfg - trabajo de fin de grado", 
+    "tfg (trabajo de fin de grado)", "trabajos fin de estudios", "trabajo fin de estudios", 
+    "trabajos de fin de estudios", "trabajo de fin de estudios", "tfg"
+]
 
-    # Construir la consulta final combinando las diferentes partes
-    parsed_query = " OR ".join(parsed_query_parts)  # Concatenamos con OR para que sea válido
+TFM_equivalents = [
+    "taz-tfm", "trabajos fin de master", "trabajo fin de master", "trabajos de fin de master", 
+    "trabajo de fin de master", "tfm", "o master", "o de master", "o de máster", "o máster",
+    "trabajos fin de máster", "trabajos de fin de máster",
+    "trabajo fin de máster", "trabajo de fin de máster"
+]
 
-    # Expresión regular para detectar años (asumiendo que los años están entre 1000 y 2999)
-    year_pattern = re.compile(r"\b(1[0-9]{3}|2[0-9]{3})\b")
+Tesis_equivalents = [
+    "tesis", "tesis doctoral", "tesinas", "tesina", "tesina doctoral", "tesinas doctorales", "taz-tesis"
+]
 
-    # Buscar años en el texto con expresiones regulares
-    years = year_pattern.findall(query_text)
-    posFechas = [int(year) for year in years]
+PFC_equivalents = [
+    "taz-pfc", "proyectos fin de carrera", "proyectos de fin de carrera", "proyecto fin de carrera", "proyecto de fin de carrera",
+    "pfc"
+]
 
-    # Manejar las fechas
-    if len(posFechas) >= 2:
-        start_year = min(posFechas)
-        end_year = max(posFechas)
-        fecha_range_query = NumericRange("publishingyear", start_year, end_year)
-        parsed_query += f" OR {fecha_range_query}"
-    elif len(posFechas) == 1:
-        year = posFechas[0]
-        fecha_query = "publishingyear:{year}"
-        parsed_query += f" OR {fecha_query}"
-    return parsed_query
+Spanish_equivalents = [
+    "español", "castellano", "spanish"
+]
+
+English_equivalents = [
+    "inglés", "english"
+]
+
+Other_Words = [
+    "dirigidos", "dirigido", "años", "año", "departamentos de", "departamento de", "miembros", "miembro", "familia", 
+    "publicados", "publicado", "estudios", "estudio", "trabajos", "trabajo", "realizados", "realizado", "tutorizados",
+    "tutorizado", "apellido", "preferentemente", "defecto", "relacionados", "relacionado", "existen", "hay", "han", "alguien",
+    "busco", "necesito", "ejemplo", "ejemplos", "llamado", "desarrollado", "desarrollada"
+]
+
+Stop_words = [
+    "los", "las", "unos", "unas",
+    "el", "la", "un", "una",
+    "nosotros", "vosotros", "ellos",
+    "yo", "tú", "él", "ella", "me", "te", "se", "lo", "la",
+    "y", "o", "pero", "porque", "ni",
+    "a", "de", "en", "con", "por", "para", "sobre",
+    "muy", "poco", "ya", "siempre", "nunca",
+    "ser", "estar", "tener", "hacer", "ir", "poder",
+    "que", "quien", "donde", "como", "qué", "estos", 
+    "estas", "son", "es", "si", "entre", "hacia", "hasta", 
+    "para", "por", "según", "sin", "sobre", "tras", "su", "desde"
+]
 
 
-
-def findCoord(query_text):
-    pattern = r"spatial:([\-\d\.]+),([\-\d\.]+),([\-\d\.]+),([\-\d\.]+)"
+def cleanQuery(query_text):
+    # substituimos signos de puntuación por puntos
+    query_text = re.sub(r'[;,!?]', '.', query_text)
+    #eliminamos *
+    query_text = re.sub(r'[\*,¿,¡]', '', query_text)
     
-    # Buscar las coordenadas en el string usando la expresión regular
-    match = re.search(pattern, query_text)
+    return query_text
+
+
+def deleteUnnecessaryWords(sentence):
+    lowerCase = sentence.lower()
+    # eliminamos palabras relacionadas con el tipo de proyecto, lenguaje y palabras comunes sobre autoría, dirección, etc
+    # eliminamos también palabras que no aporten demasiada información en los campos en los que buscamos
+    deleteWords = [TFG_equivalents, TFM_equivalents, Tesis_equivalents, PFC_equivalents, 
+                    Spanish_equivalents, English_equivalents, Other_Words]
+    for dict in deleteWords:
+        for word in dict:
+             lowerCase = re.sub(r'\b' + re.escape(word) + r'\b', '', lowerCase)
     
-    if match:
-        not_espacial_query = re.sub(pattern, '', query_text)
-        west = match.group(1)
-        east = match.group(2)
-        south = match.group(3)
-        north = match.group(4)
-        return west, east, south, north,not_espacial_query
-    else:
-        return None, None, None, None, query_text
+    # eliminamos stop words en español
+    for stop in Stop_words:
+        lowerCase = re.sub(r'\b' + re.escape(stop) + r'\b', '', lowerCase)
+
+    lowerCase = re.sub(r'\s+', ' ', lowerCase).strip()
+    return lowerCase    
+    
+
+
+def mainQuery(query_text, searcher):
+    lowerCaseQuery = query_text.lower()
+    keyWordQueries = []
+    titleAndDescQueries = []
+    sentences = lowerCaseQuery.split('.')
+    sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+    for sentence in sentences:
+        aux = deleteUnnecessaryWords(sentence)
+        print(aux)
+        keyWordQueries.append(searcher.KeyWordParser.parse(aux))
+        titleAndDescQueries.append(searcher.MainParser.parse(aux))
+    return Or(keyWordQueries), Or(titleAndDescQueries)
+
+
+def docTypeQuery(query_text):
+    lowerCaseQuery = query_text.lower()
+    typeSearched = []
+    deleteWords = [TFG_equivalents, TFM_equivalents, Tesis_equivalents, PFC_equivalents]
+    for dict in deleteWords:
+        for word in dict:
+            if word in lowerCaseQuery:
+                typeSearched.append(Term("docType", dict[0]))
+    print(typeSearched)
+    
+
+
+
+
+def parseQuery(query_text, searcher):
+    # Eliminamos interrogantes y otros signos de puntuación distintos del punto
+    #query = cleanQuery(query_text)
+    #keyWordQuery, titleAndDescQuery = mainQuery(query, searcher)
+    docQuery = docTypeQuery(query)
+    #languageQuery(query, searcher)
+    
 
 class MySearcher:
     def __init__(self, index_folder, model_type = 'tfidf'):
@@ -92,29 +146,17 @@ class MySearcher:
         else:
             # Apply the probabilistic BM25F model, the default model in searcher method
             self.searcher = ix.searcher()
-        self.parser = QueryParser("content", ix.schema, group = OrGroup)
+        self.KeyWordParser = QueryParser("subject", ix.schema, group = OrGroup)
+        self.MainParser = MultifieldParser(["description", "title"], ix.schema, group = OrGroup)
+        self.NameParser = MultifieldParser(["creator", "contributor"], ix.schema, group = OrGroup)
+        self.PubliParser = QueryParser("publisher", ix.schema, group = OrGroup)
+    
 
         
-    def search(self, query_text, query_count,output_file):
-        spatial_query = None
-        west, east, south, north, not_spacial_query=findCoord(query_text)
-        if west is not None and east is not None and north is not None and south is not None:
-            westRangeQuery = NumericRange ("west", start = None , end = east )
-            eastRangeQuery = NumericRange ("east", start = west , end = None )
-            northRangeQuery = NumericRange ("north", start = south , end = None )
-            southRangeQuery = NumericRange ("west", start = None , end = north )
-            spatial_query = And([westRangeQuery,eastRangeQuery,southRangeQuery,northRangeQuery ])
-            #query=not_spacial_query
-        #búsqueda sin las coordenadas
-        #
-       # parsed_query=parser(query)
-        #query=parser(query_text)
-        #query= Or([spatial_query,parsed_query])
-        #limitamos los resultados de cada búsqueda a 100
-        query = self.parser.parse(not_spacial_query)
-        if spatial_query is not None: 
-            query = Or([query, spatial_query])
-        print("Búsqueda de la Query procesada: ",query)
+    def search(self, query_text, query_count, output_file):
+        query = parseQuery(query_text)
+        """
+        print("Búsqueda de la Query procesada: ", query)
         results = self.searcher.search(query, limit = 100)
         print('Returned documents:')
         i = 1
@@ -124,9 +166,10 @@ class MySearcher:
             # Escribir el número de consulta y el identificador en el archivo de resultados
             output_file.write(f"{query_count}\t{identifier}\n")
             i += 1
+        """
 
 if __name__ == '__main__':
-    index_folder = '../whooshindexZaguan' #indice por defecto
+    index_folder = '../whooshindexZaguanGeo' #indice por defecto
     i = 1
     infor=False
     while (i < len(sys.argv)):
@@ -145,15 +188,16 @@ if __name__ == '__main__':
 
      # Procesar las consultas y guardar los resultados
     try:
-        with open(queryFile, 'r', encoding='utf-8') as query_file, open(resultsFile, 'w', encoding='utf-8') as output_file:
-            query_count = 1
-            for query in query_file:
-                query = query.strip()  # Elimina saltos de línea y espacios adicionales
-                if query:
-                    print(f"\nEjecutando búsqueda para la query {query_count}: '{query}'")
+        with open(resultsFile, 'w', encoding='utf-8') as output_file:
+            tree = ET.parse(queryFile)
+            root = tree.getroot()
+            for child in root.findall('informationNeed'):
+                query_count = child.find('identifier').text
+                query=child.find('text').text
+                print(f"\nEjecutando búsqueda para la query {query_count}: '{query}'")
                     # Obtener los resultados de la búsqueda
-                    results = searcher.search(query,query_count,output_file)
-                    query_count += 1
+                processedQuery = parseQuery(query, searcher)
+                #results = searcher.search(processedQuery, query_count, output_file)
     except FileNotFoundError:
         print(f"El archivo {queryFile} no se encontró.")
     except Exception as e:
