@@ -21,6 +21,7 @@ from whoosh.query import And,Or
 from whoosh.query import NumericRange, Term
 import xml.etree.ElementTree as ET
 
+# Array de strings equivalntes a TAZ-TFG para la consulta de tipo de documento
 TFG_equivalents = [
     "taz-tfg", "trabajos fin de grado", "trabajo fin de grado", "trabajos de fin de grado", 
     "trabajo de fin de grado", "tfg - trabajo de fin de grado", 
@@ -28,6 +29,7 @@ TFG_equivalents = [
     "trabajos de fin de estudios", "trabajo de fin de estudios", "tfg"
 ]
 
+# Array de strings equivalntes a TAZ-TFM para la consulta de tipo de documento
 TFM_equivalents = [
     "taz-tfm", "trabajos fin de master", "trabajo fin de master", "trabajos de fin de master", 
     "trabajo de fin de master", "tfm", "o master", "o de master", "o de máster", "o máster",
@@ -35,23 +37,28 @@ TFM_equivalents = [
     "trabajo fin de máster", "trabajo de fin de máster"
 ]
 
+# Array de strings equivalntes a TESIS para la consulta de tipo de documento
 Tesis_equivalents = [
     "tesis", "tesis doctoral", "tesinas", "tesina", "tesina doctoral", "tesinas doctorales", "taz-tesis"
 ]
 
+# Array de strings equivalntes a TAZ-PFC para la consulta de tipo de documento
 PFC_equivalents = [
     "taz-pfc", "proyectos fin de carrera", "proyectos de fin de carrera", "proyecto fin de carrera", "proyecto de fin de carrera",
     "pfc"
 ]
 
+# Array de strings equivalntes a español para la consulta de lenguaje
 Spanish_equivalents = [
     "español", "castellano", "spanish"
 ]
 
+# Array de strings equivalntes a inglés para la consulta de lenguaje
 English_equivalents = [
     "inglés", "english"
 ]
 
+# Array de palabras poco significativas para la búsqueda de palabras clave y búsquedas en el campo title y description
 Other_Words = [
     "dirigidos", "dirigido", "años", "año", "departamentos de", "departamento de", "miembros", "miembro", "familia", 
     "publicados", "publicado", "estudios", "estudio", "trabajos", "trabajo", "realizados", "realizado", "tutorizados",
@@ -59,6 +66,7 @@ Other_Words = [
     "busco", "necesito", "ejemplo", "ejemplos", "llamado", "desarrollado", "desarrollada", "deben", "interesado"
 ]
 
+# Array de strings palabras vacías en español
 Stop_words = [
     "los", "las", "unos", "unas",
     "el", "la", "un", "una",
@@ -74,7 +82,7 @@ Stop_words = [
     "durante", "este", "otro", "otra", "estoy", "quiero"
 ]
 
-
+# Sustituye todos los signos de puntuación por puntos, o los elimina si no son necesarios
 def cleanQuery(query_text):
     # substituimos signos de puntuación por puntos
     query_text = re.sub(r'[;,!?]', '.', query_text)
@@ -83,7 +91,8 @@ def cleanQuery(query_text):
     
     return query_text
 
-
+# Elimina las palabras menos significativas o que pertenecen a consultas en otros campos para la búsqueda de 
+# palabras clave, búsquedas en el campo title y búsquedas en el campo description
 def deleteUnnecessaryWords(sentence):
     lowerCase = sentence.lower()
     # eliminamos palabras relacionadas con el tipo de proyecto, lenguaje y palabras comunes sobre autoría, dirección, etc
@@ -101,7 +110,8 @@ def deleteUnnecessaryWords(sentence):
     lowerCase = re.sub(r'\s+', ' ', lowerCase).strip()
     return lowerCase    
 
-
+# Búsqueda de palabras clave, en el título y en la descripción. Es decir, 
+# búsquedas en los campos subject, title y description
 def mainQuery(query_text, searcher):
     lowerCaseQuery = query_text.lower()
     keyWordQueries = []
@@ -119,7 +129,7 @@ def mainQuery(query_text, searcher):
         titleAndDescQueries.append(parsed)
     return Or(keyWordQueries), Or(titleAndDescQueries)
 
-
+# Búsquedas de tipo de documento: tesis, tfg, tfm, ...
 def docTypeQuery(query_text):
     lowerCaseQuery = query_text.lower()
     typeSearched = []
@@ -132,7 +142,8 @@ def docTypeQuery(query_text):
                 typeSearched.append(t)
     return Or(typeSearched)
 
-
+# Búsquedas de lenguaje. Búscamos aparicines de palabras que nos indiquen la preferencia de idioma
+# para filtrar los documentos en base a dichas preferencias
 def languageQuery(query_text):
     lowerCaseQuery = query_text.lower()
     langSearched = []
@@ -149,7 +160,7 @@ def languageQuery(query_text):
             langSearched.append(t)
     return Or(langSearched)
 
-
+# Búsqueda de autores y directores de los trabajos
 def namesQuery(query_text, searcher):
     query_text = query_text.lower()
     nlp = spacy.load("es_core_news_sm")
@@ -183,6 +194,7 @@ def namesQuery(query_text, searcher):
     
     return Or(authorQueries), Or(contributorQueries)
 
+# Búsquedas de departamentos a los que están adscritos los trabajos 
 def departmentQuery(query_text, searcher):
     query_text = query_text.lower()
     pattern = r'\b(departamento|departmentos) de\s+([a-z\s]+)'
@@ -198,6 +210,7 @@ def departmentQuery(query_text, searcher):
     
     return None
 
+# Función auxiliar para detectar rangos de fechas
 def find2Dates(stringDate1, stringDate2, sentence, query):
     pattern = r'.*' + re.escape(stringDate1) + r'.*([0-9]{4}).*' + re.escape(stringDate2) + r'.*([0-9]{4})'
     match = re.search(pattern, sentence)
@@ -208,7 +221,7 @@ def find2Dates(stringDate1, stringDate2, sentence, query):
         fecha_range_query.boost *= 2.0
         query.append(fecha_range_query)
 
-
+# Función auxiliar para detectar rangos de fechas definidos por una única fecha
 def find1Date(stringDate1, stringDate2, sentence, query):
     pattern = r'.*' + re.escape(stringDate1) + r'.*' + r'([1-9][0-9]{0,3})' + r'.*' + re.escape(stringDate2)
     match = re.search(pattern, sentence)
@@ -224,7 +237,7 @@ def find1Date(stringDate1, stringDate2, sentence, query):
         fecha_range_query.boost *= 2.0
         query.append(fecha_range_query)
 
-
+# Función para filtrar fechas de publicación
 def publishingYearQuery(query_text):
     query_text = query_text.lower()
     yQuery = []
@@ -247,7 +260,8 @@ def publishingYearQuery(query_text):
             yQuery.append(y)
     return Or(yQuery)
 
-
+# Devuelve la query obtenida como conjunción de disyunciones obtenida al procesar la necesidad
+# información
 def parseQuery(query_text, searcher):
     # Eliminamos interrogantes y otros signos de puntuación distintos del punto
     query = cleanQuery(query_text)
