@@ -33,12 +33,12 @@ def CustomSpanishAnalyzer():
             StopFilter(lang="es") |            # Paso 3: Filtro de palabras vacías en español
             CustomSpanishStemmingFilter())     # Paso 4: Stemming personalizado
 
-
-
+# crea un directorio si no existe ya
 def create_folder(folder_name):
     if (not os.path.exists(folder_name)):
         os.mkdir(folder_name)
 
+# busca en el campo especificado en parameter
 def find_parameter(root, parameter):
     aux = root.findall('dc:'+parameter, ns)
     matches = " ".join([match.text for match in aux if match.text is not None])
@@ -105,10 +105,6 @@ class MyIndex:
         # print(file_path)
         tree = ET.parse(file_path)
         root = tree.getroot()
-        #raw_text = "".join(root.itertext())
-        # break into lines and remove leading and trailing space on each
-        #text = ' '.join(line.strip() for line in raw_text.splitlines() if line)
-        #print(text)
         d=os.path.getmtime(file_path)   #extraemos última fecha de modificación
         fecha_formateada = email.utils.formatdate(d, usegmt=False)  #formateamos la fecha
         self.writer.add_document(path=filename, date=fecha_formateada, title=find_parameter(root, 'title'),
@@ -120,8 +116,8 @@ class MyIndex:
 if __name__ == '__main__':
 
     index_folder = '../whooshindexZaguan'   #valor por defecto de la carpeta de indexación
-    #docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos
-    docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos
+    #docs_folder = '../dublinCore'         #valor por defecto de la carpeta de documentos DublinCore
+    docs_folder = '../../recordsdc'         #valor por defecto de la carpeta de documentos del repertorio de Zaguan
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == '-index':

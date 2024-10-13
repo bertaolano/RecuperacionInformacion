@@ -11,6 +11,7 @@ Usage: python3 search.py -index <indexPath> -infoNeeds <queryFile> -output <resu
 import re
 import sys
 import spacy
+from datetime import datetime
 
 
 from whoosh.qparser import QueryParser, OrGroup, MultifieldParser
@@ -99,7 +100,6 @@ def deleteUnnecessaryWords(sentence):
 
     lowerCase = re.sub(r'\s+', ' ', lowerCase).strip()
     return lowerCase    
-    
 
 
 def mainQuery(query_text, searcher):
@@ -111,8 +111,12 @@ def mainQuery(query_text, searcher):
     for sentence in sentences:
         aux = deleteUnnecessaryWords(sentence)
         #print(aux)
-        keyWordQueries.append(searcher.KeyWordParser.parse(aux))
-        titleAndDescQueries.append(searcher.MainParser.parse(aux))
+        parsed = searcher.KeyWordParser.parse(aux)
+        parsed.boost *= 2.5
+        keyWordQueries.append(parsed)
+        parsed = searcher.MainParser.parse(aux)
+        parsed.boost *= 1.25
+        titleAndDescQueries.append(parsed)
     return Or(keyWordQueries), Or(titleAndDescQueries)
 
 
@@ -123,7 +127,9 @@ def docTypeQuery(query_text):
     for dict in deleteWords:
         for word in dict:
             if word in lowerCaseQuery:
-                typeSearched.append(Term("docType", dict[0]))
+                t = Term("docType", dict[0])
+                t.boost *= 1.5
+                typeSearched.append(t)
     return Or(typeSearched)
 
 
@@ -132,11 +138,15 @@ def languageQuery(query_text):
     langSearched = []
     for term in Spanish_equivalents:
         if re.search(r'.*' + term + r'.*', lowerCaseQuery):
-            langSearched.append(Term("language", "es"))
+            t = Term("language", "es")
+            t.boost *= 2.0
+            langSearched.append(t)
     
     for term in English_equivalents:
         if re.search(r'.*' + term + r'.*', lowerCaseQuery):
-            langSearched.append(Term("language", "eng"))
+            t = Term("language", "eng")
+            t.boost *= 2.0
+            langSearched.append(t)
     return Or(langSearched)
 
 
@@ -163,28 +173,96 @@ def namesQuery(query_text, searcher):
         or re.search(r'.*director.s .*' + re.escape(name) + r'.*', query_text) \
         or re.search(r'.*director .*' + re.escape(name) + r'.*', query_text) \
         or re.search(r'.*directora .*' + re.escape(name) + r'.*', query_text):
-            contributorQueries.append(searcher.ContrNameParser.parse(name))
+            n = searcher.ContrNameParser.parse(name)
+            n.boost *= 1.5
+            contributorQueries.append(n)
         elif (not re.search(r'.*sobre' + name + r'.*', query_text)):
-            authorQueries.append(searcher.AuthorNameParser.parse(name))
+            n = searcher.AuthorNameParser.parse(name)
+            n.boost *= 2.0
+            authorQueries.append(n)
     
     return Or(authorQueries), Or(contributorQueries)
 
-def departmentQuery(query_text):
+def departmentQuery(query_text, searcher):
     query_text = query_text.lower()
+    pattern = r'\b(departamento|departmentos) de\s+([a-z\s]+)'
+    
+    # Search for the first match
+    match = re.search(pattern, query_text, re.IGNORECASE)
+    
+    if match:
+        # Return the department name (second group in the regex)
+        d = searcher.PubliParser.parse(match.group(2).strip())
+        d.boost *= 2.0
+        return d
+    
+    return None
+
+def find2Dates(stringDate1, stringDate2, sentence, query):
+    pattern = r'.*' + re.escape(stringDate1) + r'.*([0-9]{4}).*' + re.escape(stringDate2) + r'.*([0-9]{4})'
+    match = re.search(pattern, sentence)
+    if match:
+        year1 = int(match.group(1))
+        year2 = int(match.group(2))
+        fecha_range_query = NumericRange("publishingyear", min(year1, year2), max(year1, year2))
+        fecha_range_query.boost *= 2.0
+        query.append(fecha_range_query)
 
 
+def find1Date(stringDate1, stringDate2, sentence, query):
+    pattern = r'.*' + re.escape(stringDate1) + r'.*' + r'([1-9][0-9]{0,3})' + r'.*' + re.escape(stringDate2)
+    match = re.search(pattern, sentence)
+    if match:
+        years = match.group(1)
+        currentYear = datetime.now().year
+        if (stringDate2 == "años"):
+            minYear = currentYear - int(years)
+        else:
+            minYear = years
+        
+        fecha_range_query = NumericRange("publishingyear", minYear, currentYear)
+        fecha_range_query.boost *= 2.0
+        query.append(fecha_range_query)
 
+
+def publishingYearQuery(query_text):
+    query_text = query_text.lower()
+    yQuery = []
+    sentences = query_text.split('.')
+    sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+    for sentence in sentences:
+        # dos fechas
+        find2Dates("entre", "y", sentence, yQuery)
+        find2Dates("desde", "hasta", sentence, yQuery)
+        # una única fecha
+        find1Date("últimos", "años", sentence, yQuery)
+        find1Date("desde hace", "años", sentence, yQuery)
+        find1Date("desde", "hasta hoy", sentence, yQuery)
+        find1Date("desde", "en adelante", sentence, yQuery)
+        match = re.search(r'.*' + "el año" + r'[0-9]{4}', sentence)
+        if match:
+            year = match.group(1)
+            y = Term("publishingyear", year)
+            y.boost *= 2.0
+            yQuery.append(y)
+    return Or(yQuery)
 
 
 def parseQuery(query_text, searcher):
     # Eliminamos interrogantes y otros signos de puntuación distintos del punto
-    #query = cleanQuery(query_text)
-    #keyWordQuery, titleAndDescQuery = mainQuery(query, searcher)
-    #docQuery = docTypeQuery(query)
-    #lanQuery = languageQuery(query)
-    #authorQuery, contributorQuery = namesQuery(query, searcher)
-    departmentQuery(query)
-    #print(keyWordQuery, titleAndDescQuery, docQuery, lanQuery, authorQuery, contributorQuery)
+    query = cleanQuery(query_text)
+    keyWordQuery, titleAndDescQuery = mainQuery(query, searcher)
+    docQuery = docTypeQuery(query)
+    lanQuery = languageQuery(query)
+    authorQuery, contributorQuery = namesQuery(query, searcher)
+    depQuery = departmentQuery(query, searcher)
+    tempQuery = publishingYearQuery(query)
+
+    queries = [query for query in [keyWordQuery, titleAndDescQuery, docQuery, lanQuery, authorQuery, contributorQuery, depQuery, tempQuery] if query]
+    finalQuery = And(queries)
+    #print(finalQuery)
+    return finalQuery
+
 
 class MySearcher:
     def __init__(self, index_folder, model_type = 'tfidf'):
@@ -200,6 +278,18 @@ class MySearcher:
         self.AuthorNameParser = QueryParser("creator", ix.schema, group = OrGroup)
         self.ContrNameParser = QueryParser("contributor", ix.schema, group = OrGroup)
         self.PubliParser = QueryParser("publisher", ix.schema, group = OrGroup)
+
+    def search(self, query, query_id, output_file):
+        print("Búsqueda de la Query procesada: ", query)
+        results = self.searcher.search(query, limit = 100)
+        print('Returned documents:')
+        i = 1
+        for result in results:
+            identifier = result.get("identifier")
+            print(f'{i} - File path: {result.get("path")}, Similarity score: {result.score}, identifier:{result.get("identifier")}')
+            # Escribir el número de consulta y el identificador en el archivo de resultados
+            output_file.write(f"{query_id}\t{identifier}\n")
+            i += 1
 
 if __name__ == '__main__':
     index_folder = '../whooshindexZaguan' #indice por defecto
@@ -230,7 +320,7 @@ if __name__ == '__main__':
                 print(f"\nEjecutando búsqueda para la query {query_count}: '{query}'")
                     # Obtener los resultados de la búsqueda
                 processedQuery = parseQuery(query, searcher)
-                #results = searcher.search(processedQuery, query_count, output_file)
+                results = searcher.search(processedQuery, query_count, output_file)
     except FileNotFoundError:
         print(f"El archivo {queryFile} no se encontró.")
     except Exception as e:
