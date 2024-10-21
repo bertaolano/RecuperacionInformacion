@@ -10,6 +10,8 @@ Usage: python3 evaluation.py -qrels <qrelsFileName> -results <resultsFileName> -
 """
 
 import sys
+import matplotlib . pyplot as plt
+import numpy as np
 
 class InformationNeed:
     def __init__(self, need_id):
@@ -41,6 +43,13 @@ class Results:
     def get_documents_from_infoNeed(self, need_id):
         return list(self.information_needs[need_id])
         #return list(self.relevant_documents.keys())
+    
+    def get_relevant_documents_from_infoNeed(self, need_id: int, infoNeed: InformationNeed):
+        res = []
+        for doc in self.get_documents_from_infoNeed(need_id):
+            if doc in infoNeed.get_relevant_documents():
+                res.append(doc)
+        return res
 
 
 class Evaluation:
@@ -130,15 +139,27 @@ class Evaluation:
         relevant_retrieved_count = 0  # Contador de documentos relevantes recuperados
         for index, doc in enumerate(retrieved_docs):
         #for index, doc in enumerate(retrieved_docs):
-            if doc in self.information_needs[info_id].get_documents():
+            if doc in relevant_docs:
                 relevant_retrieved_count += 1
                 print(index)
                 # Calculamos la precisión hasta este punto
-                precision_at_k = relevant_retrieved_count / (index + 1)
-                #precision_at_k = self.precision(info_id,results,index+1)
+                #precision_at_k = relevant_retrieved_count / (index + 1)
+                precision_at_k = self.precision(info_id,results,index+1)
                 sum_precisions += precision_at_k
         
         return sum_precisions / relevant_retrieved_count
+    
+        """
+        n_relevant_docs = len(self.information_needs[info_id].get_relevant_documents())
+        #print(n_relevant_docs)
+        if (len(results.get_relevant_documents_from_infoNeed(info_id, self.information_needs[info_id])) == 0):
+            return 0
+        sum = 0
+        for i in range (n_relevant_docs):
+            sum += self.precision(info_id, results, i+1)
+            print(sum)
+        return sum / n_relevant_docs
+        """
 
 
 
@@ -197,6 +218,8 @@ class Evaluation:
 
         
         return recall_levels, interpolated_precisions
+    
+
 
 
 
@@ -238,22 +261,94 @@ if __name__ == '__main__':
                 results.add_result(information_need,document_id)
 
 
-with open(outputFileName, 'w') as Outputfile:
-    count = 1
-    for infoNeed in evaluation.information_needs:
-        Outputfile.write(f"INFORMATION_NEED {count}\n")
-        Outputfile.write(f"precision {evaluation.precision(infoNeed,results):.3f}\n")
-        Outputfile.write(f"recall {evaluation.recall(infoNeed,results,len(results.get_documents_from_infoNeed(infoNeed))):.3f}\n")
-        Outputfile.write(f"F1 {evaluation.f1(infoNeed,results):.3f}\n")
-        Outputfile.write(f"prec@10 {evaluation.prec10(infoNeed,results):.3f}\n")
-        Outputfile.write(f"average_precision {evaluation.average_precision(infoNeed,results):.3f}\n")
-        Outputfile.write("recall_precision\n")
-        precisions, recalls = evaluation.recall_precision(infoNeed, results)
-        for recall, precision in zip(recalls, precisions):
-            Outputfile.write(f"{recall:.3f} {precision:.3f}\n")
+    with open(outputFileName, 'w') as Outputfile:
+        total_precision = 0.0
+        total_recall = 0.0
+        total_f1 = 0.0
+        total_prec_at_10 = 0.0
+        total_ap = 0.0  # MAP
+        all_interpolated_precisions = [0.0] * 11  # Para interpolar en 11 puntos
+        count = 1
+        num_queries = len(evaluation.information_needs)
+
+        interpolated_precisions = [[0.0 for _ in range(11)] for _ in range(num_queries + 1)]
+
+        for infoNeed in evaluation.information_needs:
+            Outputfile.write(f"INFORMATION_NEED {count}\n")
+            
+            precision = evaluation.precision(infoNeed, results)
+            recall = evaluation.recall(infoNeed, results, len(results.get_documents_from_infoNeed(infoNeed)))
+            f1 = evaluation.f1(infoNeed, results)
+            prec_at_10 = evaluation.prec10(infoNeed, results)
+            average_precision = evaluation.average_precision(infoNeed, results)
+            
+            Outputfile.write(f"precision {precision:.3f}\n")
+            Outputfile.write(f"recall {recall:.3f}\n")
+            Outputfile.write(f"F1 {f1:.3f}\n")
+            Outputfile.write(f"prec@10 {prec_at_10:.3f}\n")
+            Outputfile.write(f"average_precision {average_precision:.3f}\n")
+            
+            # Acumulamos para las métricas totales
+            total_precision += precision
+            total_recall += recall
+            total_f1 += f1
+            total_prec_at_10 += prec_at_10
+            total_ap += average_precision
+            
+            # Recall y Precision
+            Outputfile.write("recall_precision\n")
+            precisions, recalls = evaluation.recall_precision(infoNeed, results)
+            for recall_value, precision_value in zip(recalls, precisions):
+                Outputfile.write(f"{recall_value:.3f} {precision_value:.3f}\n")
+            
+            # Interpolación de precisión y recall
+            interpolated_recalls, interpolated_precisions[count-1] = evaluation.recall_precision_interpolated(infoNeed, results)
+            Outputfile.write("interpolated_recall_precision\n")
+            for recall_value, precision_value in zip(interpolated_recalls, interpolated_precisions[count-1]):
+                Outputfile.write(f"{recall_value:.3f} {precision_value:.3f}\n")
+            
+            # Acumulamos las interpolaciones
+            for i, precision_value in enumerate(interpolated_precisions[count-1]):
+                all_interpolated_precisions[i] += precision_value
+            
+            #interpolated_precisions[count-1]=all_interpolated_precisions.copy()
+            print("a",len(all_interpolated_precisions))
+            
+            count += 1
+
+        # Calculamos las métricas totales
+        total_avg_precision = total_precision / num_queries if num_queries else 0
+        total_avg_recall = total_recall / num_queries if num_queries else 0
+        total_avg_f1 = total_f1 / num_queries if num_queries else 0
+        total_avg_prec_at_10 = total_prec_at_10 / num_queries if num_queries else 0
+        total_avg_ap = total_ap / num_queries if num_queries else 0
+        interpolated_avg_precisions = [p / num_queries for p in all_interpolated_precisions]
         
-        interpolated_recalls,interpolated_precisions = evaluation.recall_precision_interpolated(infoNeed,results)
+        # Escribimos las métricas totales en el archivo
+        Outputfile.write("\nTOTAL\n")
+        Outputfile.write(f"precision {total_avg_precision:.3f}\n")
+        Outputfile.write(f"recall {total_avg_recall:.3f}\n")
+        Outputfile.write(f"F1 {total_avg_f1:.3f}\n")
+        Outputfile.write(f"prec@10 {total_avg_prec_at_10:.3f}\n")
+        Outputfile.write(f"MAP {total_avg_ap:.3f}\n")
+        
+        # Escribimos la interpolación total
         Outputfile.write("interpolated_recall_precision\n")
-        for recall, precision in zip(interpolated_recalls, interpolated_precisions):
-            Outputfile.write(f"{recall:.3f} {precision:.3f}\n")
-        count += 1
+        for i, precision_value in enumerate(interpolated_avg_precisions):
+            Outputfile.write(f"{i/10:.3f} {precision_value:.3f}\n")
+        
+    interpolated_precisions[num_queries]=interpolated_avg_precisions.copy()
+
+    x = np . linspace (0.0 , 1.0 , 11)
+    print(len(x))
+    print(type(interpolated_precisions))
+    fig , ax = plt.subplots ()
+    for i in range(0,num_queries):
+        ax.plot(x, interpolated_precisions[i], label =f'information need  {i+1}')
+    ax.plot(x, interpolated_precisions[num_queries], label =f'total')
+    ax.set_title('precision - recall curve')
+    ax.set_xlabel('recall')
+    ax.set_ylabel('precision')
+    ax.grid(True, axis='y', linestyle='-', color = 'gray')
+    plt.legend(loc ='upper right')
+    plt.show ()
