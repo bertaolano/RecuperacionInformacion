@@ -89,12 +89,27 @@ class Evaluation:
         return self.tp(info_id, results,k)/(self.tp(info_id, results, k)+self.fp(info_id, results, k))
 
     
-    def recall(self, info_id: int, results: Results, k: int = None) -> float:
-        return self.tp(info_id, results, k)/(self.tp(info_id, results, k)+self.fn(info_id, results, k))
+    #def recall(self, info_id: int, results: Results, k: int = None) -> float:
+       # return self.tp(info_id, results, k)/(self.tp(info_id, results, k)+self.fn(info_id, results, k))
+    def recall(self, info_id, results: Results, at_index):
+        relevant_docs = self.information_needs[info_id].get_relevant_documents()
+        retrieved_docs = results.get_documents_from_infoNeed(info_id)[:at_index]  # Considerar los primeros 'at_index' documentos
+        
+        relevant_retrieved = 0
+        for doc in retrieved_docs:
+            if doc in relevant_docs:
+                relevant_retrieved += 1  # Cuenta solo los relevantes recuperados hasta aquí
+
+        # Evitar la división por cero si no hay documentos relevantes
+        if len(relevant_docs) == 0:
+            return 0.0
+        
+        # Cálculo del recall
+        return relevant_retrieved / len(relevant_docs)
 
     def f1(self, info_id: int, results: Results) -> float:
         P = self.precision(info_id, results)
-        R = self.recall(info_id, results)
+        R = self.recall(info_id, results,len(results.get_documents_from_infoNeed(info_id)))
         return (2 * P * R) / (P + R)
     
     def prec10(self, info_id: int, results: Results) -> float:
@@ -127,56 +142,61 @@ class Evaluation:
 
 
 
-    def recall_precision(self, results: Results):
+    def recall_precision(self, info_id, results: Results):
         precisions = []
         recalls = []
         
-        for query in self.information_needs.keys():  
-            relevant_docs = len(self.information_needs[query].get_relevant_documents())  
-            retrieved_docs = results.get_documents_from_infoNeed(query)
-            
-            precision_points = []
-            recall_points = []
+        retrieved_docs = results.get_documents_from_infoNeed(info_id)
+        relevant_docs = self.information_needs[info_id].get_relevant_documents()
 
-            for index, doc in enumerate(retrieved_docs):
-                precision = self.precision(query, results, index + 1)  
-                recall = self.recall(query, results)  
+        for index, doc in enumerate(retrieved_docs):
+            if doc in relevant_docs:
+                precision = self.precision(info_id, results, index + 1)
+                recall = self.recall(info_id, results, index + 1)
 
-                precision_points.append(precision)
-                recall_points.append(recall)
+                print(f"Doc: {doc} | Precision: {precision:.3f} | Recall: {recall:.3f}")
                 
+                precisions.append(precision)
+                recalls.append(recall)
+
         return precisions, recalls
 
-    def recall_precision_interpolated(self, results: Results):
+
+    def recall_precision_interpolated(self, info_id, results: Results):
         precisions = []
         recalls = []
+         
+        relevant_docs = self.information_needs[info_id].get_relevant_documents()
+        retrieved_docs = results.get_documents_from_infoNeed(info_id)
         
-        for query in self.information_needs.keys(): 
-            relevant_docs = len(self.information_needs[query].get_relevant_documents())  
-            retrieved_docs = results.get_documents_from_infoNeed(query)
-            
-            precision_points = []
-            recall_points = []
-            
-            for index, doc in enumerate(retrieved_docs):
-                precision = self.precision(query, results, index + 1) 
-                recall = self.recall(query, results)  
+        precision_points = []
+        recall_points = []
+        
+        for index, doc in enumerate(retrieved_docs):
+            if doc in relevant_docs:
+                precision = self.precision(info_id, results, index + 1) 
+                recall = self.recall(info_id, results, index + 1)  
                 
                 precision_points.append(precision)
                 recall_points.append(recall)
-            
-            # Aplicamos la interpolación de precisión
-            max_precision = 0
-            interpolated_precisions = []
-            
-            for p in reversed(precision_points):
-                max_precision = max(max_precision, p)
-                interpolated_precisions.insert(0, max_precision)  # Insertar al inicio de la lista para mantener el orden
-                
-            precisions.append(interpolated_precisions)
-            recalls.append(recall_points)
+                print(f"Doc: {doc} | Precision: {precision:.3f} | Recall: {recall:.3f}")
         
-        return precisions, recalls
+        # Lista de recalls estándar donde interpolaremos las precisiones
+        recall_levels = [i / 10.0 for i in range(11)]
+        
+        # Aplicamos la interpolación de precisión para cada nivel de recall estándar
+        interpolated_precisions = []
+        
+        for recall_level in recall_levels:
+            # Encontrar la máxima precisión para el recall >= recall_level
+            max_precision = 0.0
+            for r, p in zip(recall_points, precision_points):
+                if r >= recall_level:
+                    max_precision = max(max_precision, p)
+            interpolated_precisions.append(max_precision)
+
+        
+        return recall_levels, interpolated_precisions
 
 
 
@@ -223,19 +243,17 @@ with open(outputFileName, 'w') as Outputfile:
     for infoNeed in evaluation.information_needs:
         Outputfile.write(f"INFORMATION_NEED {count}\n")
         Outputfile.write(f"precision {evaluation.precision(infoNeed,results):.3f}\n")
-        Outputfile.write(f"recall {evaluation.recall(infoNeed,results):.3f}\n")
+        Outputfile.write(f"recall {evaluation.recall(infoNeed,results,len(results.get_documents_from_infoNeed(infoNeed))):.3f}\n")
         Outputfile.write(f"F1 {evaluation.f1(infoNeed,results):.3f}\n")
         Outputfile.write(f"prec@10 {evaluation.prec10(infoNeed,results):.3f}\n")
         Outputfile.write(f"average_precision {evaluation.average_precision(infoNeed,results):.3f}\n")
-        precisions, recalls = evaluation.recall_precision(results)
         Outputfile.write("recall_precision\n")
+        precisions, recalls = evaluation.recall_precision(infoNeed, results)
         for recall, precision in zip(recalls, precisions):
-            for r, p in zip(recall, precision): 
-                Outputfile.write(f"{r:.3f} {p:.3f}\n")
+            Outputfile.write(f"{recall:.3f} {precision:.3f}\n")
         
-        interpolated_precisions, interpolated_recalls = evaluation.recall_precision_interpolated(results)
+        interpolated_recalls,interpolated_precisions = evaluation.recall_precision_interpolated(infoNeed,results)
         Outputfile.write("interpolated_recall_precision\n")
         for recall, precision in zip(interpolated_recalls, interpolated_precisions):
-            for r, p in zip(recall, precision): 
-                Outputfile.write(f"{r:.3f} {p:.3f}\n")
+            Outputfile.write(f"{recall:.3f} {precision:.3f}\n")
         count += 1
