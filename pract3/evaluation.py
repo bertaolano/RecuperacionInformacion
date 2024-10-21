@@ -139,7 +139,6 @@ class Evaluation:
             recall_points = []
 
             for index, doc in enumerate(retrieved_docs):
-                tp = self.tp(query, results) 
                 precision = self.precision(query, results, index + 1)  
                 recall = self.recall(query, results)  
 
@@ -160,7 +159,6 @@ class Evaluation:
             recall_points = []
             
             for index, doc in enumerate(retrieved_docs):
-                tp = self.tp(query, results)  
                 precision = self.precision(query, results, index + 1) 
                 recall = self.recall(query, results)  
                 
