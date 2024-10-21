@@ -113,14 +113,14 @@ class Evaluation:
             return 0.0
 
         relevant_retrieved_count = 0  # Contador de documentos relevantes recuperados
-        for index, doc in enumerate(self.information_needs[info_id].get_documents()):
+        for index, doc in enumerate(retrieved_docs):
         #for index, doc in enumerate(retrieved_docs):
-            if doc in retrieved_docs:
+            if doc in self.information_needs[info_id].get_documents():
                 relevant_retrieved_count += 1
                 print(index)
                 # Calculamos la precisión hasta este punto
-                #precision_at_k = relevant_retrieved_count / (index + 1)
-                precision_at_k = self.precision(info_id,results,index+1)
+                precision_at_k = relevant_retrieved_count / (index + 1)
+                #precision_at_k = self.precision(info_id,results,index+1)
                 sum_precisions += precision_at_k
         
         return sum_precisions / relevant_retrieved_count
